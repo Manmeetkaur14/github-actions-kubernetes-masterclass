@@ -1,0 +1,6 @@
+# Defines the namespace for the application.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skillpulse

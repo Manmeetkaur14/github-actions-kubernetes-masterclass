@@ -1,14 +1,12 @@
 name: CD
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -26,3 +24,16 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ap-south-1 --name skillpulse-dev
 
+      - name: Deploy manifests
+        run: |
+          kubectl apply -f k8s/core/
+          kubectl apply -f k8s/mysql/
+          kubectl apply -f k8s/skillpulse/
+
+      - name: Update backend image
+        run: |
+          kubectl set image deployment/backend backend=486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-backend:latest -n skillpulse
+
+      - name: Update frontend image
+        run: |
+          kubectl set image deployment/frontend frontend=486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-frontend:latest -n skillpulse

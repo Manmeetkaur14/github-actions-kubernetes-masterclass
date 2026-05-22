@@ -9,7 +9,6 @@ jobs:
   code-security:
     name: Code Security & Secrets Scan
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -19,7 +18,6 @@ jobs:
   infra-scan:
     name: Infrastructure Compliance (Checkov)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -33,14 +31,12 @@ jobs:
   build-backend:
     name: Build Backend Service
     runs-on: ubuntu-latest
-    needs:
-      - code-security
-      - infra-scan
+    needs: [code-security, infra-scan]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -50,7 +46,7 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Backend
+      - name: Build & Push Backend
         run: |
           docker build -t 486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-backend:${{ github.sha }} ./backend
           docker push 486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-backend:${{ github.sha }}
@@ -58,14 +54,12 @@ jobs:
   build-frontend:
     name: Build Frontend Service
     runs-on: ubuntu-latest
-    needs:
-      - code-security
-      - infra-scan
+    needs: [code-security, infra-scan]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -75,22 +69,20 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Frontend
+      - name: Build & Push Frontend
         run: |
           docker build -t 486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-frontend:${{ github.sha }} ./frontend
           docker push 486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-frontend:${{ github.sha }}
 
   deploy-dev:
-    name: Deploy Dev Manifests (EKS)
+    name: Deploy to EKS Dev
     runs-on: ubuntu-latest
-    needs:
-      - build-backend
-      - build-frontend
+    needs: [build-backend, build-frontend]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -98,8 +90,7 @@ jobs:
           aws-region: ap-south-1
 
       - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --region ap-south-1 --name skillpulse-dev
+        run: aws eks update-kubeconfig --region ap-south-1 --name skillpulse-dev
 
       - name: Deploy manifests
         run: |
@@ -107,32 +98,25 @@ jobs:
           kubectl apply -f k8s/mysql/
           kubectl apply -f k8s/skillpulse/
 
-      - name: Update backend image
+      - name: Update images
         run: |
           kubectl set image deployment/backend backend=486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-backend:${{ github.sha }} -n skillpulse
-
-      - name: Update frontend image
-        run: |
           kubectl set image deployment/frontend frontend=486036174293.dkr.ecr.ap-south-1.amazonaws.com/skillpulse-frontend:${{ github.sha }} -n skillpulse
 
   smoke-test:
-    name: Automated Application Smoke Test
+    name: Application Smoke Test
     runs-on: ubuntu-latest
-    needs:
-      - deploy-dev
+    needs: deploy-dev
 
     steps:
-      - name: Smoke Test
-        run: |
-          curl -I http://a2ae55a863f6344a782726b510f1f071-641008221.ap-south-1.elb.amazonaws.com
+      - name: Test frontend
+        run: curl -I http://a2ae55a863f6344a782726b510f1f071-641008221.ap-south-1.elb.amazonaws.com
 
   telemetry-check:
-    name: Verify Dev Telemetry
+    name: Monitoring Health Check
     runs-on: ubuntu-latest
-    needs:
-      - smoke-test
+    needs: smoke-test
 
     steps:
-      - name: Monitoring Check
-        run: |
-          curl -I http://a2ae55a863f6344a782726b510f1f071-641008221.ap-south-1.elb.amazonaws.com/grafana
+      - name: Check Grafana
+        run: curl -I http://a2ae55a863f6344a782726b510f1f071-641008221.ap-south-1.elb.amazonaws.com/grafana
